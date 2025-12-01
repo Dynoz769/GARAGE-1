@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Garaj</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>Admin Dashboard - Pengurusan Garaj</header>
+    <div class="container">
+        <h3>Status Garaj</h3>
+        <div class="garaj-container" id="garajContainer"></div>
+
+        <div class="filter-controls">
+            <input type="text" id="search" placeholder="Cari Nama/No Matrik" onkeyup="fetchBookings()">
+            <select id="statusFilter" onchange="fetchBookings()">
+                <option value="">Semua Status</option>
+                <option value="Pending">Pending</option>
+                <option value="Approved">Approved</option>
+                <option value="Rejected">Rejected</option>
+                <option value="Cancelled">Cancelled</option>
+            </select>
+            <button onclick="exportCSV()">Export CSV</button>
+            <button onclick="logout()">Logout</button>
+        </div>
+
+        <h3>Senarai Tempahan</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID Tempahan</th>
+                    <th>Nama</th>
+                    <th>No Matrik</th>
+                    <th>Bulan Mula</th>
+                    <th>Bulan Tamat</th>
+                    <th>Tempoh</th>
+                    <th>Garaj</th>
+                    <th>Status</th>
+                    <th>Mesej</th>
+                    <th>Tindakan</th>
+                </tr>
+            </thead>
+            <tbody id="bookingTable"></tbody>
+        </table>
+    </div>
+
+<script>
+    const api = "https://admin-garaj-1.onrender.com";
+    const totalGaraj = 8;
+    
+    // Semak Autentikasi Admin
+    document.addEventListener('DOMContentLoaded', () => {
+        const role = localStorage.getItem('role');
+        if (role !== 'admin') {
+            alert('Akses ditolak.');
+            window.location.href = 'login.html';
+        }
+        fetchBookings();
+        fetchGarajStatus();
+    });
+
+    function logout() {
+        localStorage.removeItem('username');
+        localStorage.removeItem('role');
+        window.location.href = 'login.html';
+    }
+
+    // ===== FETCH BOOKINGS =====
+    async function fetchBookings(){
+        const search = document.getElementById('search').value;
+        const status = document.getElementById('statusFilter').value;
+        const res = await fetch(`${api}/bookings?search=${search}&status=${status}`);
+        const data = await res.json();
+        renderBookings(data);
+    }
+
+    // Helper function untuk mendapatkan senarai garaj yang tersedia (untuk paparan)
+    async function getAvailableGarajList() {
+        // Kita gunakan logik di server untuk mendapatkan status, tetapi kita akan menapisnya di sini
+        const res = await fetch(`${api}/garaj-status`);
+        return await res.json();
+    }
+
+    // ===== RENDER BOOKINGS (KEMASKINI: Tambah Dropdown) =====
+    async function renderBookings(data){
+        const tbody = document.getElementById('bookingTable');
+        tbody.innerHTML='';
+        if (!Array.isArray(data)) return; 
+
+        // Dapatkan senarai garaj yang tersedia untuk semua tempahan pending
+        const availableGarajList = await getAvailableGarajList();
+
+        data.forEach(b=>{
+            const tr = document.createElement('tr');
+            
+            let actionButtons = '';
+            
+            if(b.status === 'Pending'){
+                // --- DROP DOWN UNTUK GARAGE ---
+                let garajOptions = `<select id="garaj-select-${b.id}"><option value="">Pilih Garaj</option>`;
+                
+                // Tambah pilihan dari 1 hingga 8. Pilihan ini akan disemak ketersediaannya di server nanti.
+                for (let i = 1; i <= totalGaraj; i++) {
+                     garajOptions += `<option value="${i}">Garaj ${i}</option>`;
+                }
+                garajOptions += `</select>`;
+
+                // Butang Tetap Garaj kini memanggil fungsi dengan ID sahaja dan membaca dropdown
+                actionButtons = `
+                    ${garajOptions}
+                    <button class="approve" onclick="assignGarage('${b.id}')">Tetap</button>
+                    <button class="reject" onclick="rejectBooking('${b.id}')">Tolak</button>
+                `;
+            } else if (b.status === 'Approved') {
+                actionButtons = `<button class="delete" onclick="cancelBooking('${b.id}')">Batal</button>
+                                 <button onclick="extendBooking('${b.id}')">Lanjut</button>`;
+            } else {
+                actionButtons = `<button class="delete" onclick="deleteBooking('${b.id}')">Padam</button>`;
+            }
+            
+            tr.innerHTML = `
+              <td>${b.id}</td>
+              <td>${b.studentName}</td>
+              <td>${b.studentID}</td>
+              <td>${b.startMonth}</td>
+              <td>${b.endMonth}</td>
+              <td>${b.duration}</td>
+              <td>${b.garaj||'--'}</td>
+              <td>${b.status}</td>
+              <td>${b.message}</td>
+              <td>${actionButtons}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // ===== ASSIGN GARAGE (KEMASKINI: Ambil Nilai dari Dropdown) =====
+    async function assignGarage(id){
+        // Ambil nilai dari dropdown yang sepadan dengan ID tempahan
+        const selectElement = document.getElementById(`garaj-select-${id}`);
+        const garaj = selectElement.value;
+
+        if (!garaj) {
+            return alert('Sila pilih nombor Garaj dari senarai.');
+        }
+        
+        const res = await fetch(`${api}/bookings/${id}/garaj`,{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({garaj: parseInt(garaj)})
+        });
+        const data = await res.json();
+        
+        if (!data.success) {
+            // Jika gagal, server akan menghantar senarai garaj yang tersedia
+            const availableGarajMsg = data.availableGaraj ? `\nGaraj yang Tersedia: ${data.availableGaraj.join(', ')}` : '';
+            alert(data.message + availableGarajMsg);
+        } else {
+            alert(data.message);
+        }
+        
+        fetchBookings();
+        fetchGarajStatus();
+    }
+    
+    // ===== REJECT BOOKING =====
+    async function rejectBooking(id) {
+        const message = prompt('Masukkan sebab penolakan:');
+        if (!message) return; // Batal
+
+        if (!confirm(`Pasti nak TOLAK tempahan ID: ${id}? Tindakan ini tidak boleh diundur.`)) return;
+        
+        const res = await fetch(`${api}/bookings/${id}/reject`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        alert(data.message);
+        fetchBookings();
+        fetchGarajStatus();
+    }
+    
+    // ===== DELETE (Menggunakan ID String) =====
+    async function deleteBooking(id){
+      if(!confirm(`Pasti nak PADAM tempahan ID: ${id}?`)) return;
+      const res = await fetch(`${api}/bookings/${id}`,{method:'DELETE'});
+      const data = await res.json();
+      alert(data.message);
+      fetchBookings();
+      fetchGarajStatus();
+    }
+    
+    // ===== CANCEL BOOKING (Menggunakan ID String) =====
+    async function cancelBooking(id){
+      if(!confirm("Adakah anda pasti mahu membatalkan tempahan ini?")) return;
+      const res = await fetch(`${api}/bookings/${id}/cancel`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+      });
+      const data = await res.json();
+      alert(data.message);
+      fetchBookings();
+      fetchGarajStatus(); 
+    }
+
+    // ===== EXTEND BOOKING (Menggunakan ID String) =====
+    async function extendBooking(id){
+        const extra = prompt('Masukkan bilangan bulan tambahan:');
+        if(!extra || isNaN(parseInt(extra)) || parseInt(extra) <= 0) return alert('Sila masukkan nombor bulan yang sah.');
+
+        const res = await fetch(`${api}/bookings/${id}/extend`,{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({extra:parseInt(extra)})
+        });
+        const data = await res.json();
+        alert(data.message);
+        fetchBookings();
+        fetchGarajStatus();
+    }
+
+    // ===== GARAGE STATUS VISUALS (tidak berubah) =====
+    async function fetchGarajStatus(){
+      const res = await fetch(`${api}/garaj-status`);
+      const status = await res.json();
+      const container = document.getElementById('garajContainer');
+      container.innerHTML='';
+
+      status.forEach(g=>{
+        const div = document.createElement('div');
+        div.className = `garaj ${g.occupied ? 'occupied' : 'available'}`;
+        div.innerHTML = `Garaj ${g.garaj}<br>(${g.occupied ? 'Penuh' : 'Kosong'})`;
+        container.appendChild(div);
+      });
+    }
+
+    function exportCSV(){
+        window.location.href = `${api}/export/csv`;
+    }
+
+</script>
+</body>
+</html>>

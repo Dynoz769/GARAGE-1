@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Sistem Garaj</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="login-container">
+    <div class="login-box">
+        <h2>🔐 Login Sistem Garaj</h2>
+        <div class="input-group">
+            <input id="username" type="text" placeholder="Username" autocomplete="username">
+        </div>
+        <div class="input-group">
+            <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+        </div>
+        <button onclick="login()" class="login-btn">Login</button>
+        <p id="msg" class="message" style="display: none;"></p>
+    </div>
+</div>
+
+<script>
+function login(){
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
+  const msgElement = document.getElementById("msg");
+
+  if (!username || !password) {
+    msgElement.style.display = "block";
+    msgElement.innerText = "Sila isi username dan password!";
+    return;
+  }
+
+  // Endpoint login ini akan dikendalikan oleh server.js yang sudah di-update dengan Firebase
+  fetch("https://admin-garaj-1.onrender.com/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  })
+  .then(res => res.json())
+  .then(data => {
+    msgElement.style.display = "block";
+    msgElement.innerText = data.message || "";
+    
+    if (data.success) {
+      msgElement.style.backgroundColor = "#E8F5E9";
+      msgElement.style.color = "#4CAF50";
+      
+      localStorage.setItem("username", data.username);
+      localStorage.setItem("role", data.role);
+      
+      // ✅ TAMBAHAN: Simpan studentID ke localStorage
+      if (data.studentID) {
+          localStorage.setItem("studentID", data.studentID);
+      }
+      
+      // Redirect dengan smooth transition
+      setTimeout(() => {
+        if (data.role === "admin") window.location.href = "admin.html";
+        else window.location.href = "user.html";
+      }, 500);
+    } else {
+      msgElement.style.backgroundColor = "#FFEBEE";
+      msgElement.style.color = "#FF5252";
+    }
+  })
+  .catch(error => {
+    msgElement.style.display = "block";
+    msgElement.style.backgroundColor = "#FFEBEE";
+    msgElement.style.color = "#FF5252";
+    msgElement.innerText = "Ralat sambungan. Sila cuba lagi.";
+    console.error('Error:', error);
+  });
+}
+
+// Enter key support
+document.getElementById("password").addEventListener("keypress", function(event) {
+  if (event.key === "Enter") {
+    login();
+  }
+});
+
+document.getElementById("username").addEventListener("keypress", function(event) {
+  if (event.key === "Enter") {
+    document.getElementById("password").focus();
+  }
+});
+</script>
+</body>
+</html>
