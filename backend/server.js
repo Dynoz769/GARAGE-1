@@ -55,7 +55,7 @@ try {
 
 const db = admin.database();
 const bookingsRef = db.ref('bookings');
-const usersRef = db.ref('users'); 
+const usersRef = db.ref('users');
 
 const totalGaraj = 8;
 
@@ -108,8 +108,8 @@ function getMonthName(dateStr) {
 }
 
 async function getAvailableGarage(startMonthStr, endMonthStr) {
-	const startDate = parseDMY(startMonthStr);
-	const endDate = parseDMY(endMonthStr);
+        const startDate = parseDMY(startMonthStr);
+        const endDate = parseDMY(endMonthStr);
 	
 	const checkStart = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
 	const checkEnd = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0);
@@ -139,6 +139,27 @@ async function getAvailableGarage(startMonthStr, endMonthStr) {
 	});
 
 	return availableGaraj.filter(g => !occupiedGaraj.has(g));
+}
+
+// Memastikan sambungan Firebase boleh dicapai sebelum memulakan server
+async function verifyDatabaseConnection(timeoutMs = 5000) {
+        const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Firebase Realtime Database tidak memberi respons tepat pada masanya.')),
+                        timeoutMs)
+        );
+
+        const connectionPromise = db.ref('.info/connected').once('value').then((snapshot) => {
+                if (!snapshot.exists()) {
+                        throw new Error('Node .info/connected tidak ditemui. Semak konfigurasi databaseURL.');
+                }
+                return snapshot.val();
+        });
+
+        return Promise.race([timeoutPromise, connectionPromise]).then((isConnected) => {
+                if (!isConnected) {
+                        throw new Error('Tidak dapat mengesahkan sambungan Firebase.');
+                }
+        });
 }
 
 // ===============================================
@@ -616,6 +637,16 @@ setInterval(checkQueue, 30000);
 // ===============================================
 // START SERVER
 // ===============================================
-app.listen(port, () => {
-	console.log(`Server berjalan di port ${port}`);
-});
+(async () => {
+        try {
+                await verifyDatabaseConnection();
+                console.log('Firebase Realtime Database disahkan bersambung.');
+        } catch (error) {
+                console.error('Gagal mengesahkan sambungan Firebase:', error.message);
+                process.exit(1);
+        }
+
+        app.listen(port, () => {
+                console.log(`Server berjalan di port ${port}`);
+        });
+})();
