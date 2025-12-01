@@ -25,7 +25,7 @@
     <option value="12">1 Tahun</option>
   </select>
   <select id="garajChoice" disabled>
-    <option value="">Pilih garaj tertentu (biarkan kosong untuk auto)</option>
+    <option value="" selected>Pilih garaj secara manual</option>
   </select>
   <button onclick="bookGarage()">Tempah</button>
   <button onclick="logout()">Logout</button>
@@ -81,9 +81,14 @@ async function bookGarage(){
   let studentID = document.getElementById('idNo').value || localStorage.getItem('studentID'); // Ambil dari input atau localStorage
   const startMonth = document.getElementById('startMonth').value;
   const duration = document.getElementById('duration').value;
-  const garajChoice = document.getElementById('garajChoice').value;
+  const garajSelectEl = document.getElementById('garajChoice');
+  const garajChoice = garajSelectEl.disabled ? null : garajSelectEl.value;
 
   if(!studentName || !studentID || !startMonth || !duration) return alert('Sila lengkapkan semua maklumat!');
+
+  if(!garajChoice && !garajSelectEl.disabled){
+    return alert('Sila pilih garaj secara manual daripada senarai tersedia.');
+  }
 
   // ✅ PEMBETULAN ENDPOINT: Menghantar username ke server
   const res = await fetch(`${api}/bookings`,{
@@ -209,7 +214,7 @@ async function loadAvailableGaraj(){
   const startMonth = document.getElementById('startMonth').value;
   const duration = document.getElementById('duration').value;
 
-  garajSelect.innerHTML = '<option value="">Pilih garaj tertentu (biarkan kosong untuk auto)</option>';
+  garajSelect.innerHTML = '<option value="" selected>Pilih garaj secara manual</option>';
 
   if(!startMonth || !duration){
     garajSelect.disabled = true;

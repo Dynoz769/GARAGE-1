@@ -405,27 +405,30 @@ app.post('/bookings', async (req, res) => {
 
                 const available = await getAvailableGarage(bookingData.startMonth, bookingData.endMonth);
 
-                if (available.length > 0) {
+                if (available.length === 0) {
+                        bookingData.message = 'Tiada garaj tersedia dalam tempoh ini. Dalam barisan (Queue).';
+                } else {
                         const preferred = preferredGaraj ? parseInt(preferredGaraj) : null;
 
-                        if (preferred) {
-                                if (!available.includes(preferred)) {
-                                        return res.status(400).json({
-                                                success: false,
-                                                message: `Garaj ${preferred} tidak tersedia untuk tempoh ini. Sila pilih garaj lain.`,
-                                                availableGaraj: available
-                                        });
-                                }
-                                bookingData.garaj = preferred;
-                                bookingData.status = 'Approved';
-                                bookingData.message = `Garaj ${preferred} ditetapkan mengikut pilihan pengguna.`;
-                        } else {
-                                bookingData.garaj = available[0];
-                                bookingData.status = 'Approved';
-                                bookingData.message = `Garaj ${available[0]} ditetapkan secara automatik.`;
+                        if (!preferred) {
+                                return res.status(400).json({
+                                        success: false,
+                                        message: 'Sila pilih garaj secara manual daripada senarai tersedia.',
+                                        availableGaraj: available
+                                });
                         }
-                } else {
-                        bookingData.message = 'Tiada garaj tersedia dalam tempoh ini. Dalam barisan (Queue).';
+
+                        if (!available.includes(preferred)) {
+                                return res.status(400).json({
+                                        success: false,
+                                        message: `Garaj ${preferred} tidak tersedia untuk tempoh ini. Sila pilih garaj lain.`,
+                                        availableGaraj: available
+                                });
+                        }
+
+                        bookingData.garaj = preferred;
+                        bookingData.status = 'Approved';
+                        bookingData.message = `Garaj ${preferred} ditetapkan mengikut pilihan pengguna (manual).`;
                 }
 
                 const newBookingRef = bookingsRef.push(bookingData);
