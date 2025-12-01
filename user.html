@@ -24,6 +24,9 @@
     <option value="6">6 Bulan</option>
     <option value="12">1 Tahun</option>
   </select>
+  <select id="garajChoice" disabled>
+    <option value="">Pilih garaj tertentu (biarkan kosong untuk auto)</option>
+  </select>
   <button onclick="bookGarage()">Tempah</button>
   <button onclick="logout()">Logout</button>
 
@@ -60,6 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     fetchBookings();
     fetchGarajStatus();
+    document.getElementById('startMonth').addEventListener('change', loadAvailableGaraj);
+    document.getElementById('duration').addEventListener('change', loadAvailableGaraj);
+    loadAvailableGaraj();
 });
 
 function logout() {
@@ -75,23 +81,30 @@ async function bookGarage(){
   let studentID = document.getElementById('idNo').value || localStorage.getItem('studentID'); // Ambil dari input atau localStorage
   const startMonth = document.getElementById('startMonth').value;
   const duration = document.getElementById('duration').value;
+  const garajChoice = document.getElementById('garajChoice').value;
 
   if(!studentName || !studentID || !startMonth || !duration) return alert('Sila lengkapkan semua maklumat!');
 
   // ✅ PEMBETULAN ENDPOINT: Menghantar username ke server
-  const res = await fetch(`${api}/bookings`,{ 
+  const res = await fetch(`${api}/bookings`,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     // Pastikan username dihantar dalam body
-    body:JSON.stringify({username,studentName,studentID,startMonth,duration})
+    body:JSON.stringify({username,studentName,studentID,startMonth,duration,garaj: garajChoice ? parseInt(garajChoice) : null})
   });
-  
-  const data = await res.json(); 
-  
+
+  const data = await res.json();
+
+  if(!res.ok || data.success === false){
+    alert(data.message || 'Tempahan gagal dibuat.');
+    return;
+  }
+
   alert(data.message);
-  
-  fetchBookings(); 
+
+  fetchBookings();
   fetchGarajStatus();
+  loadAvailableGaraj();
 }
 
 // ===== FETCH TEMPAHAN PENGGUNA (DIKEMASKINI) =====
@@ -188,6 +201,53 @@ async function fetchGarajStatus(){
     div.innerHTML = garajText;
     container.appendChild(div);
   });
+}
+
+// ===== GARIS PANDUAN PILIHAN GARAJ =====
+async function loadAvailableGaraj(){
+  const garajSelect = document.getElementById('garajChoice');
+  const startMonth = document.getElementById('startMonth').value;
+  const duration = document.getElementById('duration').value;
+
+  garajSelect.innerHTML = '<option value="">Pilih garaj tertentu (biarkan kosong untuk auto)</option>';
+
+  if(!startMonth || !duration){
+    garajSelect.disabled = true;
+    return;
+  }
+
+  try {
+    const res = await fetch(`${api}/garaj-available?startMonth=${startMonth}&duration=${duration}`);
+    const data = await res.json();
+
+    if(!res.ok || data.success === false){
+      throw new Error(data.message || 'Gagal memuatkan senarai garaj.');
+    }
+
+    if(!data.available || data.available.length === 0){
+      const opt = document.createElement('option');
+      opt.disabled = true;
+      opt.textContent = 'Tiada garaj tersedia';
+      garajSelect.appendChild(opt);
+      garajSelect.disabled = true;
+      return;
+    }
+
+    data.available.forEach(num => {
+      const opt = document.createElement('option');
+      opt.value = num;
+      opt.textContent = `Garaj ${num}`;
+      garajSelect.appendChild(opt);
+    });
+
+    garajSelect.disabled = false;
+  } catch (error) {
+    const opt = document.createElement('option');
+    opt.disabled = true;
+    opt.textContent = 'Ralat memuatkan pilihan garaj';
+    garajSelect.appendChild(opt);
+    garajSelect.disabled = true;
+  }
 }
 </script>
 </body>

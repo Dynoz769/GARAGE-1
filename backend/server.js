@@ -55,7 +55,7 @@ try {
 
 const db = admin.database();
 const bookingsRef = db.ref('bookings');
-const usersRef = db.ref('users'); 
+const usersRef = db.ref('users');
 
 const totalGaraj = 8;
 
@@ -108,8 +108,8 @@ function getMonthName(dateStr) {
 }
 
 async function getAvailableGarage(startMonthStr, endMonthStr) {
-	const startDate = parseDMY(startMonthStr);
-	const endDate = parseDMY(endMonthStr);
+        const startDate = parseDMY(startMonthStr);
+        const endDate = parseDMY(endMonthStr);
 	
 	const checkStart = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
 	const checkEnd = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0);
@@ -139,6 +139,27 @@ async function getAvailableGarage(startMonthStr, endMonthStr) {
 	});
 
 	return availableGaraj.filter(g => !occupiedGaraj.has(g));
+}
+
+// Memastikan sambungan Firebase boleh dicapai sebelum memulakan server
+async function verifyDatabaseConnection(timeoutMs = 5000) {
+        const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Firebase Realtime Database tidak memberi respons tepat pada masanya.')),
+                        timeoutMs)
+        );
+
+        const connectionPromise = db.ref('.info/connected').once('value').then((snapshot) => {
+                if (!snapshot.exists()) {
+                        throw new Error('Node .info/connected tidak ditemui. Semak konfigurasi databaseURL.');
+                }
+                return snapshot.val();
+        });
+
+        return Promise.race([timeoutPromise, connectionPromise]).then((isConnected) => {
+                if (!isConnected) {
+                        throw new Error('Tidak dapat mengesahkan sambungan Firebase.');
+                }
+        });
 }
 
 // ===============================================
@@ -332,57 +353,71 @@ app.get('/bookings/history/:username', async (req, res) => {
 
 // POST /bookings (User: Create booking)
 app.post('/bookings', async (req, res) => {
-	const { username, studentName, studentID, startMonth, duration } = req.body;	
-	
-	if (!studentName || !studentID || !startMonth || !duration || !username) {
-		return res.status(400).json({ success: false, message: 'Sila isi semua ruangan yang wajib.' });
-	}
-	
-	const durationMonths = parseInt(duration);
-	
-	try {
-		// Asumsi startMonth dalam format YYYY-MM
-		const startDate = parseDMY(`01/${startMonth.substring(5, 7)}/${startMonth.substring(0, 4)}`);
-		
-		// Menentukan endMonth: Tambah tempoh (durationMonths) ke bulan mula (startDate.getMonth()),
-		// dan dapatkan hari terakhir bulan tersebut (hari 0 bulan seterusnya)
-		const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + durationMonths, 0);	
-		
-		const bookingData = {
-			username,	
-			studentName,
-			studentID,
-			startMonth: formatDateDMY(startDate),
-			endMonth: formatDateDMY(endDate),
-			duration: durationMonths,
-			garaj: null,	
-			status: 'Pending',
-			message: 'Menunggu kelulusan Admin'
-		};
-		
-		const available = await getAvailableGarage(bookingData.startMonth, bookingData.endMonth);
-		
-		if(available.length > 0) {
-			 bookingData.garaj = available[0];
-			 bookingData.status = 'Approved';
-			 bookingData.message = `Garaj ${available[0]} ditetapkan.`;
-		} else {
-			 bookingData.message = 'Tiada garaj tersedia dalam tempoh ini. Dalam barisan (Queue).';
-		}
-		
-		const newBookingRef = bookingsRef.push(bookingData);
-		await newBookingRef.update({ id: newBookingRef.key });
+        const { username, studentName, studentID, startMonth, duration, garaj: preferredGaraj } = req.body;
 
-		if (bookingData.status === 'Approved') {
-			return res.status(201).json({ success: true, message: `Tempahan diterima dan Garaj ${bookingData.garaj} ditetapkan secara automatik.` });
-		} else {
-			return res.status(201).json({ success: true, message: 'Tempahan berjaya dibuat. Menunggu kelulusan Admin (dalam barisan).' });
-		}
-		
-	} catch (error) {
-		console.error('Booking creation error:', error);
-		return res.status(500).json({ success: false, message: 'Ralat Server. Sila cuba lagi.' });
-	}
+        if (!studentName || !studentID || !startMonth || !duration || !username) {
+                return res.status(400).json({ success: false, message: 'Sila isi semua ruangan yang wajib.' });
+        }
+
+        const durationMonths = parseInt(duration);
+
+        try {
+                // Asumsi startMonth dalam format YYYY-MM
+                const startDate = parseDMY(`01/${startMonth.substring(5, 7)}/${startMonth.substring(0, 4)}`);
+
+                // Menentukan endMonth: Tambah tempoh (durationMonths) ke bulan mula (startDate.getMonth()),
+                // dan dapatkan hari terakhir bulan tersebut (hari 0 bulan seterusnya)
+                const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + durationMonths, 0);
+
+                const bookingData = {
+                        username,
+                        studentName,
+                        studentID,
+                        startMonth: formatDateDMY(startDate),
+                        endMonth: formatDateDMY(endDate),
+                        duration: durationMonths,
+                        garaj: null,
+                        status: 'Pending',
+                        message: 'Menunggu kelulusan Admin'
+                };
+
+                const available = await getAvailableGarage(bookingData.startMonth, bookingData.endMonth);
+
+                if (available.length > 0) {
+                        const preferred = preferredGaraj ? parseInt(preferredGaraj) : null;
+
+                        if (preferred) {
+                                if (!available.includes(preferred)) {
+                                        return res.status(400).json({
+                                                success: false,
+                                                message: `Garaj ${preferred} tidak tersedia untuk tempoh ini. Sila pilih garaj lain.`,
+                                                availableGaraj: available
+                                        });
+                                }
+                                bookingData.garaj = preferred;
+                                bookingData.status = 'Approved';
+                                bookingData.message = `Garaj ${preferred} ditetapkan mengikut pilihan pengguna.`;
+                        } else {
+                                bookingData.garaj = available[0];
+                                bookingData.status = 'Approved';
+                                bookingData.message = `Garaj ${available[0]} ditetapkan secara automatik.`;
+                        }
+                } else {
+                        bookingData.message = 'Tiada garaj tersedia dalam tempoh ini. Dalam barisan (Queue).';
+                }
+
+                const newBookingRef = bookingsRef.push(bookingData);
+                await newBookingRef.update({ id: newBookingRef.key });
+
+                if (bookingData.status === 'Approved') {
+                        return res.status(201).json({ success: true, message: `Tempahan diterima dan Garaj ${bookingData.garaj} ditetapkan.` });
+                } else {
+                        return res.status(201).json({ success: true, message: 'Tempahan berjaya dibuat. Menunggu kelulusan Admin (dalam barisan).' });
+                }
+        } catch (error) {
+                console.error('Booking creation error:', error);
+                return res.status(500).json({ success: false, message: 'Ralat Server. Sila cuba lagi.' });
+        }
 });
 
 // POST /bookings/:id/garaj (Admin: Assign garage)
@@ -614,8 +649,45 @@ async function checkQueue() {
 setInterval(checkQueue, 30000);
 
 // ===============================================
+// ✅ GARAJ AVAILABILITY CHECK
+// ===============================================
+app.get('/garaj-available', async (req, res) => {
+        const { startMonth, duration } = req.query;
+
+        if (!startMonth || !duration) {
+                return res.status(400).json({ success: false, message: 'startMonth dan duration diperlukan.' });
+        }
+
+        try {
+                const durationMonths = parseInt(duration);
+                if (isNaN(durationMonths) || durationMonths <= 0) {
+                        return res.status(400).json({ success: false, message: 'duration mesti nombor bulan yang sah.' });
+                }
+
+                const startDate = parseDMY(`01/${startMonth.substring(5, 7)}/${startMonth.substring(0, 4)}`);
+                const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + durationMonths, 0);
+
+                const available = await getAvailableGarage(formatDateDMY(startDate), formatDateDMY(endDate));
+                return res.json({ success: true, available });
+        } catch (error) {
+                console.error('Garaj availability error:', error);
+                return res.status(500).json({ success: false, message: 'Ralat pelayan semasa memeriksa garaj tersedia.' });
+        }
+});
+
+// ===============================================
 // START SERVER
 // ===============================================
-app.listen(port, () => {
-	console.log(`Server berjalan di port ${port}`);
-});
+(async () => {
+        try {
+                await verifyDatabaseConnection();
+                console.log('Firebase Realtime Database disahkan bersambung.');
+        } catch (error) {
+                console.error('Gagal mengesahkan sambungan Firebase:', error.message);
+                process.exit(1);
+        }
+
+        app.listen(port, () => {
+                console.log(`Server berjalan di port ${port}`);
+        });
+})();
