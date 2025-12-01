@@ -72,13 +72,13 @@ function formatDateDMY(date){
 
 function parseDMY(dateStr){
   if (!dateStr) throw new Error('Empty date string');
-  
+
   // 1. Cuba parse format DD/MM/YYYY
   const parts = dateStr.split('/');
   if (parts.length === 3) {
       const [d,m,y] = parts.map(p => parseInt(p));
       if (isNaN(d) || isNaN(m) || isNaN(y)) throw new Error(`Invalid date numbers in DD/MM/YYYY: ${dateStr}`);
-      return new Date(y, m - 1, d);	
+      return new Date(y, m - 1, d);
   }
 
   // 2. Cuba parse format YYYY-MM-DD
@@ -88,6 +88,25 @@ function parseDMY(dateStr){
   }
 
   throw new Error(`Invalid date format: ${dateStr}`);
+}
+
+// Tukar input startMonth kepada objek Date (diterima sama ada "YYYY-MM", "YYYY-MM-DD" atau "DD/MM/YYYY")
+function parseStartMonthInput(monthStr) {
+        if (!monthStr) throw new Error('startMonth diperlukan.');
+
+        // Nilai dari <input type="month"> atau tarikh penuh
+        if (/^\d{4}-\d{2}(-\d{2})?$/.test(monthStr)) {
+                const [year, month] = monthStr.split('-').map(v => parseInt(v, 10));
+                return new Date(year, month - 1, 1);
+        }
+
+        // Nilai yang dihantar sebagai DD/MM/YYYY
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(monthStr)) {
+                const parsed = parseDMY(monthStr);
+                return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+        }
+
+        throw new Error(`Format startMonth tidak sah: ${monthStr}`);
 }
 
 function snapshotToArray(snapshot) {
@@ -360,10 +379,13 @@ app.post('/bookings', async (req, res) => {
         }
 
         const durationMonths = parseInt(duration);
+        if (isNaN(durationMonths) || durationMonths <= 0) {
+                return res.status(400).json({ success: false, message: 'Tempoh tidak sah. Pilih sekurang-kurangnya 1 bulan.' });
+        }
 
         try {
-                // Asumsi startMonth dalam format YYYY-MM
-                const startDate = parseDMY(`01/${startMonth.substring(5, 7)}/${startMonth.substring(0, 4)}`);
+                // Terima kedua-dua format YYYY-MM atau DD/MM/YYYY untuk keserasian klien
+                const startDate = parseStartMonthInput(startMonth);
 
                 // Menentukan endMonth: Tambah tempoh (durationMonths) ke bulan mula (startDate.getMonth()),
                 // dan dapatkan hari terakhir bulan tersebut (hari 0 bulan seterusnya)
@@ -664,7 +686,7 @@ app.get('/garaj-available', async (req, res) => {
                         return res.status(400).json({ success: false, message: 'duration mesti nombor bulan yang sah.' });
                 }
 
-                const startDate = parseDMY(`01/${startMonth.substring(5, 7)}/${startMonth.substring(0, 4)}`);
+                const startDate = parseStartMonthInput(startMonth);
                 const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + durationMonths, 0);
 
                 const available = await getAvailableGarage(formatDateDMY(startDate), formatDateDMY(endDate));
